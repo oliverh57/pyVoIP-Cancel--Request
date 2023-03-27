@@ -1527,6 +1527,39 @@ class SIPClient:
 
         return byeRequest
 
+    def gen_CANCEL(self, request: SIPMessage) -> str:
+        tag = self.tagLibrary[request.headers["Call-ID"]]
+        c = request.headers["Contact"].strip("<").strip(">")
+        byeRequest = f"CANCEL {c} SIP/2.0\r\n"
+        byeRequest += self._gen_response_via_header(request)
+        fromH = request.headers["From"]["raw"]
+        toH = request.headers["To"]["raw"]
+        if request.headers["From"]["tag"] == tag:
+            byeRequest += f"From: {fromH};tag={tag}\r\n"
+            if request.headers["To"]["tag"] != "":
+                to = toH + ";tag=" + request.headers["To"]["tag"]
+            else:
+                to = toH
+            byeRequest += f"To: {to}\r\n"
+        else:
+            byeRequest += (
+                f"To: {fromH};tag=" + f"{request.headers['From']['tag']}\r\n"
+            )
+            byeRequest += f"From: {toH};tag={tag}\r\n"
+        byeRequest += f"Call-ID: {request.headers['Call-ID']}\r\n"
+        cseq = int(request.headers["CSeq"]["check"]) + 1
+        byeRequest += f"CSeq: {cseq} BYE\r\n"
+        byeRequest += (
+            "Contact: "
+            + f"<sip:{self.username}@{self.myIP}:{self.myPort}>\r\n"
+        )
+        byeRequest += f"User-Agent: pyVoIP {pyVoIP.__version__}\r\n"
+        byeRequest += f"Allow: {(', '.join(pyVoIP.SIPCompatibleMethods))}\r\n"
+        byeRequest += "Content-Length: 0\r\n\r\n"
+
+        return byeRequest
+
+
     def genAck(self, request: SIPMessage) -> str:
         warnings.warn(
             "genAck is deprecated due to PEP8 compliance. "
@@ -1634,6 +1667,11 @@ class SIPClient:
 
     def bye(self, request: SIPMessage) -> None:
         message = self.genBye(request)
+        # TODO: Handle bye to server vs. bye to connected client
+        self.out.sendto(message.encode("utf8"), (self.server, self.port))
+
+    def cancel(self, request: SIPMessage) -> None:
+        message = self.gen_CANCEL(request)
         # TODO: Handle bye to server vs. bye to connected client
         self.out.sendto(message.encode("utf8"), (self.server, self.port))
 
